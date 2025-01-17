@@ -60,28 +60,43 @@ def create_transition_matrix(l):
     by the number of ways to transition from one belief state to another,
     according to the fusion operator.
     """
-    
     # Generate all possible belief states
     belief_set = generate_all_beliefs(l)
+    n_states = 3**l
 
     # Create the transition matrix
-    transition_matrix = jnp.zeros((3**l, 3**l))
+    transition_matrix = jnp.zeros((n_states, n_states))
     
-    # Calculate in the transition matrix
-    for belief_1 in belief_set:
-        for belief_2 in belief_set:
+    # Calculate the transition matrix
+    for i, belief_1 in tqdm(enumerate(belief_set), total=len(belief_set), desc="Computing fusions for belief 1", leave=True):
+        for j, belief_2 in tqdm(enumerate(belief_set), total=len(belief_set), desc="with belief 2", leave=False):
             fused_belief = consensus_operator(belief_1, belief_2)
-            transition_matrix = transition_matrix.at[belief_1, fused_belief].add(1)
+            # Find the index of the fused belief in belief_set
+            fused_idx = jnp.where((belief_set == fused_belief).all(axis=1))[0][0]
+            transition_matrix = transition_matrix.at[i, fused_idx].add(1)
 
-    # Normalize the transition matrix
-    transition_matrix = transition_matrix / jnp.sum(transition_matrix, axis=1)
+    # Safe normalization: avoid division by zero
+    row_sums = jnp.sum(transition_matrix, axis=1)
+    # Add small epsilon to avoid division by zero
+    row_sums = jnp.where(row_sums == 0, 1.0, row_sums)
+    
+    # Normalize
+    transition_matrix = transition_matrix / row_sums[:, None]
 
     return transition_matrix
 
 
 
 if __name__ == "__main__":
-    l = 3
+    import argparse
+
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Generate belief states and transition matrix')
+    parser.add_argument('-l', type=int, default=3,
+                       help='Language size (default: 3)')
+    
+    args = parser.parse_args()
+    l = args.l
 
     # Generate all possible belief states
     belief_set = generate_all_beliefs(l)
