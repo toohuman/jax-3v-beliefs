@@ -50,8 +50,7 @@ def consensus_operator(belief_1, belief_2):
         )
     )
 
-
-def create_transition_matrix(l):
+def slow_create_transition_matrix(l):
     """
     Create the transition matrix for the fusion process.
     This is a 3^l x 3^l matrix, where each row and column corresponds to a
@@ -85,7 +84,101 @@ def create_transition_matrix(l):
 
     return transition_matrix
 
+def create_transition_matrix(l):
+    """
+    Create the transition matrix for the fusion process.
+    This is a 3^l x 3^l matrix, where each row and column corresponds to a
+    belief state.
+    The probability of transitioning from one belief state to another is given
+    by the number of ways to transition from one belief state to another,
+    according to the fusion operator.
+    """
+    # Generate all possible belief states
+    belief_set = generate_all_beliefs(l)
+    n_states = 3**l
 
+    # Create the transition matrix
+    transition_matrix = jnp.zeros((n_states, n_states))
+    
+    # Calculate the transition matrix using vectorised operations
+    # Reshape belief_set to enable broadcasting
+    belief_1_expanded = belief_set[:, None, :]  # Shape: (n_states, 1, l)
+    belief_2_expanded = belief_set[None, :, :]  # Shape: (1, n_states, l)
+    
+    # Compute all possible fusions in parallel
+    fused_beliefs = jax.vmap(jax.vmap(consensus_operator, in_axes=(None, 0)), in_axes=(0, None))(belief_1_expanded, belief_2_expanded)
+    
+    # For each fused belief, find its index in belief_set
+    # First reshape fused_beliefs to (n_states * n_states, l)
+    fused_beliefs_flat = fused_beliefs.reshape(-1, l)
+    
+    # Create a mask for matching beliefs
+    matches = jnp.all(fused_beliefs_flat[:, None, :] == belief_set[None, :, :], axis=2)
+    fused_indices = jnp.argmax(matches, axis=1)
+    
+    # Create indices for updating the transition matrix
+    row_indices = jnp.repeat(jnp.arange(n_states), n_states)
+    
+    # Update transition matrix using scatter_add
+    transition_matrix = transition_matrix.at[row_indices, fused_indices].add(1)
+
+    # Safe normalization: avoid division by zero
+    row_sums = jnp.sum(transition_matrix, axis=1)
+    # Add small epsilon to avoid division by zero
+    row_sums = jnp.where(row_sums == 0, 1.0, row_sums)
+    
+    # Normalize
+    transition_matrix = transition_matrix / row_sums[:, None]
+
+    return transition_matrix
+
+def create_transition_matrix_memory_efficient(l):
+    """Memory efficient version that processes rows in chunks"""
+    print("Starting belief set generation...")
+    belief_set = generate_all_beliefs(l)
+    n_states = 3**l
+    print(f"Created belief set with {n_states} states")
+    
+    print("Initializing transition matrix...")
+    transition_matrix = jnp.zeros((n_states, n_states))
+    print("Transition matrix initialized")
+    
+    # Process in chunks of 100 rows at a time
+    chunk_size = 100
+    print(f"Beginning processing in chunks of {chunk_size}...")
+    
+    for i in tqdm(range(0, n_states, chunk_size), desc="Processing chunks"):
+        print(f"Processing chunk starting at {i}")
+        end_idx = min(i + chunk_size, n_states)
+        chunk_beliefs = belief_set[i:end_idx]
+        
+        # Process this chunk with all other beliefs
+        print("Expanding dimensions for chunk...")
+        chunk_expanded = chunk_beliefs[:, None, :]
+        belief_2_expanded = belief_set[None, :, :]
+        
+        # Compute fusions for this chunk
+        print("Computing fusions...")
+        fused_beliefs = jax.vmap(jax.vmap(consensus_operator, in_axes=(None, 0)), 
+                                in_axes=(0, None))(chunk_expanded, belief_2_expanded)
+        print("Fusions computed")
+        
+        # Find matches for this chunk
+        for j in tqdm(range(end_idx - i), desc="Finding matches", leave=False):
+            for k in range(n_states):
+                fused = fused_beliefs[j, k]
+                # Find matching index
+                match_idx = jnp.where((belief_set == fused).all(axis=1))[0][0]
+                transition_matrix = transition_matrix.at[i+j, match_idx].add(1)
+    
+    print("Normalizing transition matrix...")
+    # Normalize as before
+    row_sums = jnp.sum(transition_matrix, axis=1)
+    row_sums = jnp.where(row_sums == 0, 1.0, row_sums)
+    transition_matrix = transition_matrix / row_sums[:, None]
+    
+    print("Done!")
+    return transition_matrix
 
 if __name__ == "__main__":
     import argparse
@@ -102,5 +195,5 @@ if __name__ == "__main__":
     belief_set = generate_all_beliefs(l)
     print(belief_set)
 
-    transition_matrix = create_transition_matrix(l)
+    transition_matrix = create_transition_matrix_memory_efficient(l)
     print(transition_matrix)
