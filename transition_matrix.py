@@ -191,9 +191,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     l = args.l
 
-    # Generate all possible belief states
-    belief_set = generate_all_beliefs(l)
-    print(belief_set)
-
-    transition_matrix = create_transition_matrix(l)
+    transition_matrix = create_transition_matrix_memory_efficient(l)
     print(transition_matrix)
