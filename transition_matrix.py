@@ -1,4 +1,5 @@
 import jax
+import numpy as np
 import jax.numpy as jnp
 from jax import random, vmap
 from tqdm import tqdm
@@ -191,5 +192,21 @@ if __name__ == "__main__":
     args = parser.parse_args()
     l = args.l
 
+    # Generate all possible belief states
+    belief_set = generate_all_beliefs(l)
+    print(belief_set)
+
+    # Create the transition matrix
     transition_matrix = create_transition_matrix_memory_efficient(l)
     print(transition_matrix)
+
+    # Save the generated belief dictionary to a file
+    belief_set_filename = f"belief_set_{l}.npy"
+    np.save(belief_set_filename, belief_set)
+    print(f"Belief set saved to {belief_set_filename}")
+
+    # Save the transition matrix to a file
+    # Convert JAX array to numpy array before saving
+    output_filename = f"transition_matrix_{l}.npz"
+    np.savez_compressed(output_filename, transition_matrix=np.array(transition_matrix))
+    print(f"Transition matrix saved to {output_filename}")
